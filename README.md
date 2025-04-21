@@ -21,10 +21,10 @@ Or, follow the set up below.
 
 ## 🚀 How to Run
 1. Prepare your dataset and labels.
-2. Update the paths in `CNNTesting.py`:
+2. Update the paths in `CNN.py`:
    - Image directory
    - Excel file path
-3. Run the script: py CNNTesting.py (or python3 for Mac users).
+3. Run the script: py CNN.py (or python3 for Mac users).
 ---
 ## 🚀 Features
 - Organizes and splits image data from CSV  
