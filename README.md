@@ -12,6 +12,11 @@ This project uses a Convolutional Neural Network (CNN) and clinical database to 
 - TensorFlow / Keras
 - NumPy, Pandas, OpenCV
 
+## Batch installation
+- Downloads the requirements.txt.
+- Run pip install -r requirements.txt
+
+Or, simply use an IDE and install the dependent modules.
 Install with PyCharm: https://www.jetbrains.com/pycharm/download/?section=windows
 
 ## 🚀 How to Run
