@@ -45,9 +45,9 @@ Or, follow the set up below.
 4. Run python CNN.py
    
 ## Run Command Line Classifier
-python gradcam_and_cli.py --image test_images/Mild.jpg --gradcam
+python gradcamCLI.py --image test_images/Mild.jpg --gradcam
 ## Run Web App (Streamlit GUI)
-streamlit run cnn_app.py
+streamlit run CNN.py
 ## Expect Output (Theory)
 - Confusion matrix
 - Final test accuracy
