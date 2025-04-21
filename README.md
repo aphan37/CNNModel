@@ -1,6 +1,6 @@
 # AlzhiNet-based model - CNN MRI Classifier for Early Classification of Alzheimer's Disease
 
-This project implements AlzhiNet, a custom convolutional neural network (CNN) for detecting Alzheimer’s stages from MRI images that probable to achieve ultra high accuracy (98.95% - 99.02%) (in `.jpg` format). The pipeline includes data preprocessing, training, evaluation, explainability (via Grad-CAM), and a user interface (CLI + Streamlit GUI).
+This project implements AlzhiNet, a custom convolutional neural network (CNN) for detecting Alzheimer’s stages from MRI images and clinical database (.csv) where they are harmonizedto predict Alzheimer's progression level of the patient. It is probable to achieve ultra high accuracy (98.95% - 99.02%) (in `.jpg` format). The pipeline includes data preprocessing, training, evaluation, explainability (via Grad-CAM), and a user interface (CLI + Streamlit GUI).
 
 > This research was supported through the SURI initiative under the mentorship of Dr. Sriram Srinivasan and Dr. Ruth Agada. Team members contributing on this project: Lawrence Miggins, Chibueze Oburuoh, Kevin Elias Mejia, Darryl Lomax Jr, Lauren Buriss.
 
