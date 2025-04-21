@@ -27,12 +27,12 @@ Or, follow the set up below.
 3. Run the script: py CNNTesting.py (or python3 for Mac users).
 ---
 ## 🚀 Features
-Organizes and splits image data from CSV  
-Trains a CNN (`AlzhiNet`) on labeled MRI images  
-Validates and evaluates model performance  
-Saves best model automatically (`best_model.pth`)  
-Includes Grad-CAM for model interpretability  
-Includes CLI + Streamlit GUI for user interaction
+- Organizes and splits image data from CSV  
+- Trains a CNN (`AlzhiNet`) on labeled MRI images  
+- Validates and evaluates model performance  
+- Saves best model automatically (`best_model.pth`)  
+- Includes Grad-CAM for model interpretability  
+- Includes CLI + Streamlit GUI for user interaction
 
 ---
 ## 🛠️ Setup Instructions
@@ -49,6 +49,6 @@ python gradcam_and_cli.py --image test_images/Mild.jpg --gradcam
 ## Run Web App (Streamlit GUI)
 streamlit run cnn_app.py
 ## Expect Output (Theory)
-Confusion matrix
-Final test accuracy
-Grad-CAM visualizations showing model attention
+- Confusion matrix
+- Final test accuracy
+- Grad-CAM visualizations showing model attention
