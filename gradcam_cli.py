@@ -126,20 +126,28 @@ def apply_gradcam(model: nn.Module, input_tensor: torch.Tensor, class_index: int
         backward_handle.remove()
 
 
-def render_gradcam(pil_image: Image.Image, cam: np.ndarray, out_path: str, show: bool = False):
+def make_overlay(pil_image: Image.Image, cam: np.ndarray) -> np.ndarray:
+    """Blend the Grad-CAM heatmap onto the image. Returns an RGB uint8 array.
+    (cv2's colormap is BGR; converting to RGB first fixes swapped red/blue
+    in the original when displayed via matplotlib.)"""
     img = np.array(pil_image.resize(IMAGE_SIZE)) / 255.0
     heatmap = cv2.applyColorMap(np.uint8(255 * cam), cv2.COLORMAP_JET)
-    heatmap = np.float32(heatmap) / 255
-    combined = heatmap + img
+    heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+    combined = np.float32(heatmap) / 255 + img
     combined = combined / np.max(combined)
+    return np.uint8(255 * combined)
+
+
+def render_gradcam(pil_image: Image.Image, cam: np.ndarray, out_path: str, show: bool = False):
+    overlay = make_overlay(pil_image, cam)
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    cv2.imwrite(out_path, cv2.cvtColor(np.uint8(255 * combined), cv2.COLOR_RGB2BGR))
+    cv2.imwrite(out_path, cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR))
     print(f"Saved Grad-CAM visualization to {out_path}")
 
     if show:
         import matplotlib.pyplot as plt
-        plt.imshow(combined)
+        plt.imshow(overlay)
         plt.title("Grad-CAM")
         plt.axis("off")
         plt.show()
