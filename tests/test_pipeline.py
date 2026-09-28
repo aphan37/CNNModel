@@ -125,3 +125,11 @@ def test_gradcam_returns_normalized_heatmap():
     cam = apply_gradcam(model, x, class_index=2)
     assert cam.shape == (config.IMAGE_SIZE, config.IMAGE_SIZE)
     assert cam.min() >= 0.0 and cam.max() <= 1.0 + 1e-5
+
+
+def test_gradcam_overlay_is_a_valid_rgb_image():
+    from gradcam_cli import make_overlay
+    cam = np.random.default_rng(1).random((config.IMAGE_SIZE, config.IMAGE_SIZE)).astype(np.float32)
+    overlay = make_overlay(Image.new("RGB", (64, 64), "gray"), cam)
+    assert overlay.shape == (config.IMAGE_SIZE, config.IMAGE_SIZE, 3)
+    assert overlay.dtype == np.uint8
