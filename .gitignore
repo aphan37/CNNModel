@@ -1,0 +1,18 @@
+# Patient data and derived datasets -- never commit these
+*.csv
+labeledNACCImages/
+organizedNACCImages/
+preprocessedNACCImages/
+dataset/
+
+# Training artifacts
+models/
+results/
+*.pth
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+.DS_Store

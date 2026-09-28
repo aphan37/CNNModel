@@ -136,6 +136,17 @@ cross-validation before reporting a final number.
 - **Class-weighted loss, early stopping, LR scheduling, reproducibility
   seeding** — none of which the original training loop had.
 
+## Tests
+
+```bash
+python -m pytest tests/ -v
+```
+
+12 tests cover the properties this pipeline depends on: standard CDR label
+mapping, clinical (not alphabetical) class ordering, empty-class handling,
+patient-level splitting with no leakage across train/val/test, Gaussian
+smoothing, and Grad-CAM output. They run automatically in CI on every push.
+
 ## Requirements
 
 - Python 3.9+
