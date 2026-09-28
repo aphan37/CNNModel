@@ -21,6 +21,9 @@ RESULTS_DIR = "results"
 os.makedirs(MODEL_OUT_DIR, exist_ok=True)
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
+DATASET_STATS_PATH = os.path.join(RESULTS_DIR, "dataset_stats.json")
+BEST_MODEL_PATH = os.path.join(MODEL_OUT_DIR, "best_model.pth")
+
 # === CDR -> severity label mapping (standard Clinical Dementia Rating scale) ===
 # 0 = Normal, 0.5 = Very Mild / MCI, 1 = Mild, 2 = Moderate, 3 = Severe.
 # This ORDER matters — it's used for the quadratic-weighted kappa metric,

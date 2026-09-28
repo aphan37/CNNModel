@@ -23,6 +23,7 @@ Usage:
     python preprocessing.py stats       # compute dataset mean/std for Normalize()
 """
 
+import json
 import os
 import sys
 
@@ -159,10 +160,17 @@ def compute_dataset_mean_std(image_dir: str):
 
     # cv2 reads BGR — flip to RGB order to match torchvision's convention
     mean, std = mean[::-1], std[::-1]
-    print(f"Dataset mean (RGB): {mean.tolist()}")
-    print(f"Dataset std  (RGB): {std.tolist()}")
-    print("Paste these into config.py / train.py's transforms.Normalize(...) call.")
-    return mean.tolist(), std.tolist()
+    mean_list, std_list = mean.tolist(), std.tolist()
+
+    stats_path = os.path.join(config.RESULTS_DIR, "dataset_stats.json")
+    with open(stats_path, "w") as f:
+        json.dump({"mean": mean_list, "std": std_list}, f, indent=2)
+
+    print(f"Dataset mean (RGB): {mean_list}")
+    print(f"Dataset std  (RGB): {std_list}")
+    print(f"Saved to {stats_path} — train.py and gradcam_cli.py load this "
+          f"automatically, no manual copy-paste needed.")
+    return mean_list, std_list
 
 
 if __name__ == "__main__":

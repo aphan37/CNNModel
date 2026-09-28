@@ -21,6 +21,9 @@ python preprocessing.py stats
 
 # 4. Train + evaluate
 python train.py
+
+# 5. Classify a single image with Grad-CAM explainability
+python gradcam_cli.py --image test_images/sample.jpg --gradcam
 ```
 
 Note the dependency order: `data_pipeline.py` currently organizes from
