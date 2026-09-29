@@ -276,4 +276,18 @@ def evaluate_on_test(model, test_loader, class_names, device):
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Train AlzhiNet")
+    parser.add_argument("--epochs", type=int, default=None,
+                         help="Override config.NUM_EPOCHS (useful for a fast smoke test)")
+    parser.add_argument("--patience", type=int, default=None,
+                         help="Override config.EARLY_STOPPING_PATIENCE")
+    args = parser.parse_args()
+
+    if args.epochs is not None:
+        config.NUM_EPOCHS = args.epochs
+    if args.patience is not None:
+        config.EARLY_STOPPING_PATIENCE = args.patience
+
     train()

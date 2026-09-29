@@ -85,6 +85,26 @@ def harmonize_and_organize():
               f"these are silently excluded from training. Investigate if this number is large.")
 
 
+def _safe_stratified_split(ids, labels, test_size):
+    """train_test_split with stratify= raises ValueError if any class has
+    fewer than 2 members on either side of the split -- which WILL happen
+    for rare classes (Moderate/Severe are typically the smallest in NACC
+    severity data, and small synthetic/pilot datasets hit this constantly).
+    Rather than crash the whole pipeline over one rare class, this falls
+    back to an unstratified split when that happens, with a loud warning
+    so you know per-class proportions may be uneven in that split."""
+    try:
+        return train_test_split(
+            ids, labels, test_size=test_size, stratify=labels, random_state=config.RANDOM_SEED
+        )
+    except ValueError as e:
+        print(f"  [WARN] stratified split failed ({e}) — falling back to a random "
+              f"(non-stratified) split for this partition. Per-class proportions may "
+              f"be uneven here; check the printed counts below before trusting "
+              f"per-class val/test metrics for the affected class.")
+        return train_test_split(ids, labels, test_size=test_size, random_state=config.RANDOM_SEED)
+
+
 def _extract_naccid(file_name: str) -> str:
     """NACCID is assumed to be the underscore-delimited prefix of the filename,
     e.g. 'NACC123456_visit2_slice04.jpg' -> 'NACC123456'. If your naming
@@ -141,18 +161,12 @@ def patient_level_stratified_split(source_dir: str = None):
     strat_labels = [most_severe_label(pid) for pid in patient_ids]
 
     # split patients (not images) into train/val/test, stratified by severity
-    train_ids, temp_ids, train_strat, temp_strat = train_test_split(
-        patient_ids, strat_labels,
-        test_size=(1 - config.SPLIT_RATIOS["train"]),
-        stratify=strat_labels,
-        random_state=config.RANDOM_SEED,
+    train_ids, temp_ids, train_strat, temp_strat = _safe_stratified_split(
+        patient_ids, strat_labels, test_size=(1 - config.SPLIT_RATIOS["train"])
     )
     relative_test_size = config.SPLIT_RATIOS["test"] / (config.SPLIT_RATIOS["val"] + config.SPLIT_RATIOS["test"])
-    val_ids, test_ids = train_test_split(
-        temp_ids,
-        test_size=relative_test_size,
-        stratify=temp_strat,
-        random_state=config.RANDOM_SEED,
+    val_ids, test_ids, _, _ = _safe_stratified_split(
+        temp_ids, temp_strat, test_size=relative_test_size
     )
 
     split_map = {"train": set(train_ids), "val": set(val_ids), "test": set(test_ids)}
@@ -184,5 +198,14 @@ def patient_level_stratified_split(source_dir: str = None):
 
 
 if __name__ == "__main__":
-    harmonize_and_organize()
-    patient_level_stratified_split()
+    import sys
+
+    command = sys.argv[1] if len(sys.argv) > 1 else "organize"
+
+    if command == "organize":
+        harmonize_and_organize()
+    elif command == "split":
+        patient_level_stratified_split()
+    else:
+        print("Usage: python data_pipeline.py [organize|split]")
+        print("Run 'organize' first, then preprocessing.py apply, then 'split'.")

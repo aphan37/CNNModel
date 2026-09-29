@@ -7,33 +7,38 @@ what's safe to tune.
 ## Run order
 
 ```bash
-# 1. Harmonize CSV + images, then split by PATIENT (not by file) into train/val/test
-python data_pipeline.py
+# 1. Harmonize CSV + images by class
+python data_pipeline.py organize
 
 # 2. Denoise: compare sigma candidates visually, pick one, then apply it
 python preprocessing.py sweep     # writes results/sigma_sweep.png
 # edit config.GAUSSIAN_SIGMA based on what you see, then:
 python preprocessing.py apply
 
-# 3. Compute this dataset's own normalization stats (not ImageNet's)
+# 3. Compute this dataset's own normalization stats (auto-saved and
+#    auto-loaded by train.py / gradcam_cli.py -- no manual copy-paste)
 python preprocessing.py stats
-# paste the printed mean/std into train.py's `dataset_mean` / `dataset_std`
 
-# 4. Train + evaluate
+# 4. Split by PATIENT (not by file) into train/val/test, stratified by severity
+python data_pipeline.py split
+
+# 5. Train + evaluate
 python train.py
 
-# 5. Classify a single image with Grad-CAM explainability
+# 6. Classify a single image with Grad-CAM explainability
 python gradcam_cli.py --image test_images/sample.jpg --gradcam
 ```
 
-Note the dependency order: `data_pipeline.py` currently organizes from
-`LABELLED_IMAGE_FOLDER` and splits from `PREPROCESSED_DIR`. Run
-`preprocessing.py apply` on the organized folder *before* running the split
-step of `data_pipeline.py`, or adjust `data_pipeline.py`'s
-`patient_level_stratified_split()` call to point at `ORGANIZED_DIR` if you'd
-rather split before smoothing. Either order is statistically fine since
-smoothing is deterministic and label-independent — just be consistent and
-document which order you used for a given run.
+The order is enforced, not just suggested: `organize` must run before
+`preprocessing.py apply` (which smooths the organized images), and `split`
+must run after (it splits from the smoothed output). Running a step before
+its dependency is ready fails immediately with a clear error rather than
+silently producing something wrong.
+
+**No real data yet?** `python scripts/generate_sample_data.py` generates a
+small synthetic dataset (fake patients, fake MRI-like images) that exercises
+this exact same flow, so you can confirm the pipeline itself works before
+ever touching NACC data. See the README's "Try it without real data" section.
 
 ## What counts as the "baseline" — freeze this before tuning anything
 

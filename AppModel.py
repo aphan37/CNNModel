@@ -7,9 +7,22 @@ was defined separately in CNN.py, AppModel.py, and referenced (but not
 actually importable) from gradcamCLI.py, which meant the three could drift
 out of sync silently. Now there's exactly one definition.
 
-Includes BatchNorm after each conv layer (the original AppModel.py did not
-have this) — speeds convergence and improves training stability for a
-model trained from scratch rather than fine-tuned from a pretrained backbone.
+Includes two changes vs. the original AppModel.py:
+  1. BatchNorm after each conv layer — speeds convergence and improves
+     training stability for a model trained from scratch.
+  2. Global average pooling before the FC head, instead of a flatten.
+     The original flattened the full 256x28x28 feature map (200,704
+     values) straight into a 1024-unit FC layer -- a ~205 MILLION
+     parameter layer, by far the majority of the entire model's weights.
+     That's expensive to train (it OOM'd outright in a 4GB-RAM sandbox
+     while smoke-testing this), slow on a modest laptop GPU, and adds a
+     lot of overfitting risk for a dataset with limited patients per
+     class. Global average pooling collapses each of the 256 channels to
+     a single value (a standard technique used in ResNet, DenseNet, and
+     most modern CNNs for exactly this reason), so the FC layer becomes
+     256 -> 1024 instead of 200,704 -> 1024: roughly 800x fewer
+     parameters in that layer, with no loss of the spatial feature
+     extraction done by the conv blocks before it.
 """
 
 import torch.nn as nn
@@ -35,13 +48,15 @@ class AlzhiNet(nn.Module):
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2, stride=2),
         )
+        self.global_pool = nn.AdaptiveAvgPool2d(1)  # (B, 256, H, W) -> (B, 256, 1, 1), any input size
         self.flatten = nn.Flatten()
-        self.fc1 = nn.Linear(256 * 28 * 28, 1024)
+        self.fc1 = nn.Linear(256, 1024)
         self.dropout = nn.Dropout(0.5)
         self.fc2 = nn.Linear(1024, num_classes)
 
     def forward(self, x):
         x = self.features(x)
+        x = self.global_pool(x)
         x = self.flatten(x)
         x = F.relu(self.fc1(x))
         x = self.dropout(x)

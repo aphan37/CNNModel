@@ -5,7 +5,7 @@ report a number publicly.
 
 ## Summary
 - **Task:** 5-class CDR severity staging (Normal, MCI, Mild, Moderate, Severe) from MRI slices
-- **Architecture:** AlzhiNet, 3 conv blocks (Conv-BatchNorm-ReLU-MaxPool) + 2 FC layers, trained from scratch
+- **Architecture:** AlzhiNet, 3 conv blocks (Conv-BatchNorm-ReLU-MaxPool) + global average pooling + 2 FC layers, trained from scratch (~640K params total)
 - **Status:** baseline run pending on the patient-level split
 
 ## Run details

@@ -52,15 +52,40 @@ To train, place the NACC clinical CSV and labeled `.jpg` folder in the repo
 root (paths at the top of `config.py`), then:
 
 ```bash
-python data_pipeline.py                 # organize + patient-level split
+python data_pipeline.py organize        # harmonize CSV + images by class
 python preprocessing.py sweep           # compare sigma 1.0-2.0 -> results/sigma_sweep.png
 python preprocessing.py apply           # apply config.GAUSSIAN_SIGMA
 python preprocessing.py stats           # dataset mean/std -> results/dataset_stats.json
+python data_pipeline.py split           # patient-level stratified train/val/test split
 python train.py                         # train + evaluate -> models/, results/
 
 python gradcam_cli.py --image path/to/scan.jpg --gradcam
 streamlit run app.py
 ```
+
+Order matters: `organize` must run before `preprocessing.py apply` (which
+smooths the organized images), and `split` must run after (it splits from
+the smoothed output). Running them out of order fails fast with a clear
+error rather than silently doing the wrong thing.
+
+### Try it without real data
+
+No NACC access yet, or just want to confirm the pipeline itself works?
+
+```bash
+python scripts/generate_sample_data.py     # synthetic patients + fake MRI-like images
+python data_pipeline.py organize
+python preprocessing.py apply && python preprocessing.py stats
+python data_pipeline.py split
+python train.py --epochs 3 --patience 3    # fast smoke run, not a real baseline
+python gradcam_cli.py --image dataset/test/Severe/<any_file>.jpg --gradcam
+```
+
+This runs the exact same code path as a real run, just on synthetic
+"brain slices" with a severity-correlated visual signal. It proves the
+pipeline works end to end; it proves nothing about real diagnostic
+accuracy. The same flow runs automatically in CI on every push (see
+`tests/test_integration.py`).
 
 See [`FINE_TUNING_GUIDE.md`](FINE_TUNING_GUIDE.md) for the tuning process and
 baseline protocol, and [`MODEL_CARD.md`](MODEL_CARD.md) for results and limits.
@@ -80,6 +105,14 @@ baseline protocol, and [`MODEL_CARD.md`](MODEL_CARD.md) for results and limits.
 - **Class-weighted loss** for NACC's skewed severity distribution.
 - **Dataset-specific normalization**, since the model trains from scratch.
 - **Explainability.** Grad-CAM shows which regions drove each prediction.
+- **Global average pooling before the FC head.** The original architecture
+  flattened the full 256x28x28 feature map straight into a 1024-unit FC
+  layer — about 205 million parameters in that one layer alone, the large
+  majority of the entire model. Global average pooling (standard in
+  ResNet, DenseNet, and most modern CNNs) collapses each channel to one
+  value first, cutting that layer to ~263K parameters with no loss of the
+  spatial features the conv blocks extract, and makes training realistic
+  on a modest GPU or CPU.
 
 ## Results
 
@@ -105,5 +138,17 @@ preprocessing.py     Gaussian smoothing, sigma sweep, dataset stats
 train.py             training + evaluation
 gradcam_cli.py       CLI classifier + Grad-CAM
 app.py               Streamlit demo
-tests/               pytest suite (labels, ordering, leakage, preprocessing, Grad-CAM, app)
+scripts/generate_sample_data.py   synthetic data generator for smoke-testing without real data
+tests/               unit tests, app tests, and an end-to-end integration test
 ```
+
+### Tests
+
+```bash
+python -m pytest tests/ -v
+```
+
+16 tests: label mapping, clinical (not alphabetical) class ordering, empty-class
+handling, patient-level split leakage, Gaussian smoothing, Grad-CAM, the
+Streamlit app, and one full end-to-end pipeline run on synthetic data
+(~15-20 seconds total). All run in CI on every push.
