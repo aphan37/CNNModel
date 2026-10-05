@@ -131,33 +131,46 @@ def compute_class_weights(dataset: OrderedImageFolder) -> torch.Tensor:
     return torch.tensor(weights, dtype=torch.float32)
 
 
-def load_dataset_stats():
+def load_dataset_stats(stats_path: str = None):
     """Loads mean/std saved by `python preprocessing.py stats`. Falls back
     to a neutral placeholder with a loud warning if that step hasn't been
     run yet — training will still work, but normalization won't be tuned
     to your actual data."""
-    if os.path.exists(config.DATASET_STATS_PATH):
-        with open(config.DATASET_STATS_PATH) as f:
+    stats_path = stats_path or config.DATASET_STATS_PATH
+    if os.path.exists(stats_path):
+        with open(stats_path) as f:
             stats = json.load(f)
-        print(f"Loaded dataset stats from {config.DATASET_STATS_PATH}: "
+        print(f"Loaded dataset stats from {stats_path}: "
               f"mean={stats['mean']}, std={stats['std']}")
         return stats["mean"], stats["std"]
 
-    print(f"  [WARN] {config.DATASET_STATS_PATH} not found — run "
+    print(f"  [WARN] {stats_path} not found — run "
           f"`python preprocessing.py stats` first for accurate normalization. "
           f"Falling back to a neutral placeholder for now.")
     return [0.5, 0.5, 0.5], [0.25, 0.25, 0.25]
 
 
-def train():
+def train(split_dir: str = None, model_dir: str = None, stats_path: str = None, results_dir: str = None):
+    """
+    split_dir/model_dir/stats_path/results_dir default to the single-model
+    config paths. The sigma ensemble (ensemble.py) passes each variant's
+    own paths instead, so 4 parallel runs never overwrite each other's
+    model checkpoint, normalization stats, or results.
+    """
+    split_dir = split_dir or config.SPLIT_DIR
+    model_dir = model_dir or config.MODEL_OUT_DIR
+    results_dir = results_dir or config.RESULTS_DIR
+    os.makedirs(model_dir, exist_ok=True)
+    os.makedirs(results_dir, exist_ok=True)
+
     set_seed()
 
-    dataset_mean, dataset_std = load_dataset_stats()
+    dataset_mean, dataset_std = load_dataset_stats(stats_path)
     train_transform, eval_transform = build_transforms(dataset_mean, dataset_std)
 
-    train_dataset = OrderedImageFolder(root=os.path.join(config.SPLIT_DIR, "train"), transform=train_transform)
-    val_dataset = OrderedImageFolder(root=os.path.join(config.SPLIT_DIR, "val"), transform=eval_transform)
-    test_dataset = OrderedImageFolder(root=os.path.join(config.SPLIT_DIR, "test"), transform=eval_transform)
+    train_dataset = OrderedImageFolder(root=os.path.join(split_dir, "train"), transform=train_transform)
+    val_dataset = OrderedImageFolder(root=os.path.join(split_dir, "val"), transform=eval_transform)
+    test_dataset = OrderedImageFolder(root=os.path.join(split_dir, "test"), transform=eval_transform)
 
     # Class indices now follow config.CLASS_ORDER (clinical severity order),
     # not alphabetical folder order — this is what makes the kappa metric
@@ -223,7 +236,7 @@ def train():
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             epochs_without_improvement = 0
-            torch.save(model.state_dict(), os.path.join(config.MODEL_OUT_DIR, "best_model.pth"))
+            torch.save(model.state_dict(), os.path.join(model_dir, "best_model.pth"))
             print("  Saved best model so far.")
         else:
             epochs_without_improvement += 1
@@ -231,24 +244,31 @@ def train():
                 print(f"  No val_loss improvement in {config.EARLY_STOPPING_PATIENCE} epochs — stopping early.")
                 break
 
-    with open(os.path.join(config.RESULTS_DIR, "training_history.json"), "w") as f:
+    with open(os.path.join(results_dir, "training_history.json"), "w") as f:
         json.dump(history, f, indent=2)
 
-    evaluate_on_test(model, test_loader, class_names, device)
+    evaluate_on_test(model, test_loader, test_dataset, class_names, device, model_dir, results_dir)
 
 
-def evaluate_on_test(model, test_loader, class_names, device):
-    model.load_state_dict(torch.load(os.path.join(config.MODEL_OUT_DIR, "best_model.pth")))
+def evaluate_on_test(model, test_loader, test_dataset, class_names, device, model_dir, results_dir):
+    model.load_state_dict(torch.load(os.path.join(model_dir, "best_model.pth")))
     model.eval()
 
-    all_preds, all_labels = [], []
+    # file names in iteration order -- shuffle=False on test_loader guarantees
+    # this lines up with the batches below. Used to align predictions across
+    # the 4 sigma-ensemble models by filename (same scan, different smoothing).
+    sample_filenames = [os.path.basename(path) for path, _ in test_dataset.samples]
+
+    all_preds, all_labels, all_probs = [], [], []
     with torch.no_grad():
         for inputs, labels in test_loader:
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
+            probs = torch.softmax(outputs, dim=1)
             _, predicted = torch.max(outputs, 1)
             all_preds.extend(predicted.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
+            all_probs.extend(probs.cpu().numpy().tolist())
 
     label_indices = list(range(len(class_names)))  # config.CLASS_ORDER indices, 0..4
 
@@ -266,11 +286,21 @@ def evaluate_on_test(model, test_loader, class_names, device):
     print(f"\nConfusion matrix (rows=true, cols=predicted):\n{class_names}\n{cm}")
     print(f"\nClassification report:\n{report}")
 
-    with open(os.path.join(config.RESULTS_DIR, "test_report.json"), "w") as f:
+    with open(os.path.join(results_dir, "test_report.json"), "w") as f:
         json.dump({
             "accuracy": accuracy,
             "quadratic_weighted_kappa": kappa,
             "confusion_matrix": cm.tolist(),
+            "class_order": class_names,
+        }, f, indent=2)
+
+    # Per-sample probabilities -- not needed for a single model, but this is
+    # what the sigma ensemble averages across all 4 models (soft voting).
+    with open(os.path.join(results_dir, "test_predictions.json"), "w") as f:
+        json.dump({
+            "filenames": sample_filenames,
+            "true_labels": [int(x) for x in all_labels],
+            "probs": all_probs,
             "class_order": class_names,
         }, f, indent=2)
 
@@ -283,6 +313,14 @@ if __name__ == "__main__":
                          help="Override config.NUM_EPOCHS (useful for a fast smoke test)")
     parser.add_argument("--patience", type=int, default=None,
                          help="Override config.EARLY_STOPPING_PATIENCE")
+    parser.add_argument("--split-dir", type=str, default=None,
+                         help="Override config.SPLIT_DIR (used by the sigma ensemble)")
+    parser.add_argument("--model-dir", type=str, default=None,
+                         help="Override config.MODEL_OUT_DIR (used by the sigma ensemble)")
+    parser.add_argument("--stats-path", type=str, default=None,
+                         help="Override config.DATASET_STATS_PATH (used by the sigma ensemble)")
+    parser.add_argument("--results-dir", type=str, default=None,
+                         help="Override config.RESULTS_DIR (used by the sigma ensemble)")
     args = parser.parse_args()
 
     if args.epochs is not None:
@@ -290,4 +328,5 @@ if __name__ == "__main__":
     if args.patience is not None:
         config.EARLY_STOPPING_PATIENCE = args.patience
 
-    train()
+    train(split_dir=args.split_dir, model_dir=args.model_dir,
+          stats_path=args.stats_path, results_dir=args.results_dir)

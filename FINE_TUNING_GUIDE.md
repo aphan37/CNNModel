@@ -118,3 +118,27 @@ This is what turns "I trained a model" into "I can tell you exactly how
 this model was produced and how confident to be in its numbers" — which is
 the difference that matters most when this project comes up in an
 interview.
+
+
+## Sigma ensemble (alternative to picking one sigma)
+
+Section "Gaussian sigma" above has you sweep 1.0-2.0 and pick a single
+winner. `ensemble.py` is an alternative to that choice: instead of
+discarding the non-winning sigmas, train one model per candidate and
+average their predictions at inference. See the README's "Sigma ensemble"
+section for usage.
+
+When to prefer this over picking one sigma:
+- The sweep didn't show a clearly dominant sigma (several looked
+  reasonable, none obviously best)
+- You have compute budget for ~4x training time and don't mind ~4x
+  inference cost and storage for the final model
+
+When to skip it and just pick one sigma:
+- One sigma value was clearly best in the sweep and in validation kappa
+- You need fast single-pass inference (e.g. the Streamlit demo is meant to
+  be near-instant) -- the ensemble is slower at inference time too, not
+  just at training time
+- You haven't yet frozen a single-model baseline — get that working and
+  recorded in MODEL_CARD.md first; the ensemble is an enhancement on top
+  of a working baseline, not a replacement for having one

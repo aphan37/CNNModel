@@ -25,6 +25,7 @@ matter for correctness, since smoothing is deterministic and label-blind;
 this repo's default order is: organize raw -> smooth -> split).
 """
 
+import json
 import os
 import shutil
 from collections import defaultdict
@@ -197,6 +198,106 @@ def patient_level_stratified_split(source_dir: str = None):
           "collecting more data for that class before trusting per-class metrics.")
 
 
+def compute_patient_split_assignment(source_dir: str = None):
+    """
+    Like patient_level_stratified_split(), but instead of copying images
+    into split folders for ONE preprocessed version, this just determines
+    and SAVES which split (train/val/test) each patient belongs to, as
+    JSON. Used by the sigma ensemble so all 4 models train/validate/test
+    on the exact same patients, just with different Gaussian smoothing —
+    without this, each sigma variant could end up with a different random
+    split, making the 4 models' test accuracy numbers not comparable to
+    each other and the ensemble's "same test set" requirement violated.
+
+    Reads from config.ORGANIZED_DIR (pre-smoothing) since the patient/label
+    grouping doesn't depend on sigma at all.
+    """
+    source_dir = source_dir or config.ORGANIZED_DIR
+    if not os.path.isdir(source_dir):
+        raise RuntimeError(f"{source_dir} not found. Run 'python data_pipeline.py organize' first.")
+
+    print(f"Building patient -> label map from {source_dir}...")
+    patient_labels = defaultdict(set)
+    for label in config.CLASS_ORDER:
+        label_dir = os.path.join(source_dir, label)
+        if not os.path.isdir(label_dir):
+            continue
+        for file_name in os.listdir(label_dir):
+            if file_name.lower().endswith(".jpg"):
+                patient_labels[_extract_naccid(file_name)].add(label)
+
+    def most_severe_label(pid):
+        return max(patient_labels[pid], key=lambda l: config.CLASS_ORDER.index(l))
+
+    patient_ids = list(patient_labels.keys())
+    strat_labels = [most_severe_label(pid) for pid in patient_ids]
+
+    train_ids, temp_ids, train_strat, temp_strat = _safe_stratified_split(
+        patient_ids, strat_labels, test_size=(1 - config.SPLIT_RATIOS["train"])
+    )
+    relative_test_size = config.SPLIT_RATIOS["test"] / (config.SPLIT_RATIOS["val"] + config.SPLIT_RATIOS["test"])
+    val_ids, test_ids, _, _ = _safe_stratified_split(temp_ids, temp_strat, test_size=relative_test_size)
+
+    assignment = {pid: "train" for pid in train_ids}
+    assignment.update({pid: "val" for pid in val_ids})
+    assignment.update({pid: "test" for pid in test_ids})
+
+    os.makedirs(config.RESULTS_DIR, exist_ok=True)
+    with open(config.PATIENT_SPLIT_ASSIGNMENT_PATH, "w") as f:
+        json.dump(assignment, f, indent=2)
+
+    print(f"  Patient split -> train: {len(train_ids)}, val: {len(val_ids)}, test: {len(test_ids)}")
+    print(f"  Saved assignment -> {config.PATIENT_SPLIT_ASSIGNMENT_PATH}")
+    return assignment
+
+
+def build_dataset_from_assignment(preprocessed_dir: str, out_dir: str):
+    """
+    Copies images from a (sigma-smoothed) preprocessed directory into
+    out_dir/train|val|test/<class>/, using the patient->split assignment
+    saved by compute_patient_split_assignment() — so every sigma variant's
+    dataset folder has the identical set of patients in each split.
+    """
+    if not os.path.exists(config.PATIENT_SPLIT_ASSIGNMENT_PATH):
+        raise RuntimeError(
+            f"{config.PATIENT_SPLIT_ASSIGNMENT_PATH} not found. "
+            f"Run compute_patient_split_assignment() first (shared across all sigma variants)."
+        )
+    with open(config.PATIENT_SPLIT_ASSIGNMENT_PATH) as f:
+        assignment = json.load(f)
+
+    for split in config.SPLIT_RATIOS:
+        for label in config.CLASS_ORDER:
+            os.makedirs(os.path.join(out_dir, split, label), exist_ok=True)
+
+    counts = defaultdict(int)
+    unassigned = 0
+    for label in config.CLASS_ORDER:
+        label_dir = os.path.join(preprocessed_dir, label)
+        if not os.path.isdir(label_dir):
+            continue
+        for file_name in os.listdir(label_dir):
+            if not file_name.lower().endswith(".jpg"):
+                continue
+            pid = _extract_naccid(file_name)
+            split = assignment.get(pid)
+            if split is None:
+                unassigned += 1
+                continue
+            dst_path = os.path.join(out_dir, split, label, file_name)
+            if not os.path.exists(dst_path):
+                shutil.copy(os.path.join(label_dir, file_name), dst_path)
+                counts[(split, label)] += 1
+
+    print(f"  Built dataset at {out_dir}")
+    for split in config.SPLIT_RATIOS:
+        row = [f"{label}={counts[(split, label)]}" for label in config.CLASS_ORDER]
+        print(f"    {split}: {', '.join(row)}")
+    if unassigned:
+        print(f"  [WARN] {unassigned} images belonged to a patient not in the saved "
+              f"assignment (e.g. new data added after assign ran) — excluded.")
+
+
 if __name__ == "__main__":
     import sys
 
@@ -206,6 +307,11 @@ if __name__ == "__main__":
         harmonize_and_organize()
     elif command == "split":
         patient_level_stratified_split()
+    elif command == "assign":
+        compute_patient_split_assignment()
     else:
-        print("Usage: python data_pipeline.py [organize|split]")
-        print("Run 'organize' first, then preprocessing.py apply, then 'split'.")
+        print("Usage: python data_pipeline.py [organize|split|assign]")
+        print("  organize: harmonize CSV + images by class")
+        print("  split:    single-model patient-level split (self-contained)")
+        print("  assign:   save a patient->split assignment for the sigma ensemble "
+              "(see ensemble.py)")

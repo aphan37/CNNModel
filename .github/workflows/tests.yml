@@ -26,3 +26,6 @@ jobs:
 
       - name: Run end-to-end pipeline integration test (synthetic data)
         run: python -m pytest tests/test_integration.py -v
+
+      - name: Run sigma ensemble integration test (synthetic data)
+        run: python -m pytest tests/test_ensemble.py -v

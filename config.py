@@ -24,6 +24,32 @@ os.makedirs(RESULTS_DIR, exist_ok=True)
 DATASET_STATS_PATH = os.path.join(RESULTS_DIR, "dataset_stats.json")
 BEST_MODEL_PATH = os.path.join(MODEL_OUT_DIR, "best_model.pth")
 
+# === Sigma ensemble ===
+# 4 models, each trained on the same patient-level split but a different
+# Gaussian sigma, combined by averaging their softmax outputs. See
+# FINE_TUNING_GUIDE.md's "Sigma ensemble" section for the full rationale.
+ENSEMBLE_SIGMAS = [1.0, 1.25, 1.5, 2.0]
+ENSEMBLE_DIR = "ensemble"
+PATIENT_SPLIT_ASSIGNMENT_PATH = os.path.join(RESULTS_DIR, "patient_split_assignment.json")
+
+
+def ensemble_paths(sigma):
+    """All per-sigma paths live under ensemble/sigma_<value>/, kept
+    separate from the single-model pipeline's paths above so the two
+    workflows never collide or overwrite each other."""
+    tag = f"sigma_{sigma}"
+    base = os.path.join(ENSEMBLE_DIR, tag)
+    results_dir = os.path.join(base, "results")
+    model_dir = os.path.join(base, "model")
+    return {
+        "preprocessed": os.path.join(base, "preprocessed"),
+        "dataset": os.path.join(base, "dataset"),
+        "model_dir": model_dir,
+        "model_path": os.path.join(model_dir, "best_model.pth"),
+        "results_dir": results_dir,
+        "stats_path": os.path.join(results_dir, "dataset_stats.json"),
+    }
+
 # === CDR -> severity label mapping (standard Clinical Dementia Rating scale) ===
 # 0 = Normal, 0.5 = Very Mild / MCI, 1 = Mild, 2 = Moderate, 3 = Severe.
 # This ORDER matters — it's used for the quadratic-weighted kappa metric,

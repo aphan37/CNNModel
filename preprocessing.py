@@ -132,13 +132,18 @@ def sweep_sigma_and_save_grid(sample_class: str = None, n_samples: int = 4,
           "cortical folds) are still sharp — then set GAUSSIAN_SIGMA in config.py.")
 
 
-def compute_dataset_mean_std(image_dir: str):
+def compute_dataset_mean_std(image_dir: str, save_path: str = None):
     """
     Computes per-channel mean/std over every image in image_dir (recursively,
     across class subfolders) — use this instead of ImageNet stats, since
     AlzhiNet is trained from scratch rather than fine-tuned from an
     ImageNet-pretrained backbone.
+
+    save_path defaults to config.DATASET_STATS_PATH (the single-model flow);
+    the sigma ensemble passes each variant's own stats path instead, so the
+    4 models don't overwrite each other's normalization stats.
     """
+    save_path = save_path or config.DATASET_STATS_PATH
     pixel_sum = np.zeros(3, dtype=np.float64)
     pixel_sq_sum = np.zeros(3, dtype=np.float64)
     n_pixels = 0
@@ -162,13 +167,13 @@ def compute_dataset_mean_std(image_dir: str):
     mean, std = mean[::-1], std[::-1]
     mean_list, std_list = mean.tolist(), std.tolist()
 
-    stats_path = os.path.join(config.RESULTS_DIR, "dataset_stats.json")
-    with open(stats_path, "w") as f:
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    with open(save_path, "w") as f:
         json.dump({"mean": mean_list, "std": std_list}, f, indent=2)
 
     print(f"Dataset mean (RGB): {mean_list}")
     print(f"Dataset std  (RGB): {std_list}")
-    print(f"Saved to {stats_path} — train.py and gradcam_cli.py load this "
+    print(f"Saved to {save_path} — train.py and gradcam_cli.py load this "
           f"automatically, no manual copy-paste needed.")
     return mean_list, std_list
 

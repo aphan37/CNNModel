@@ -48,19 +48,20 @@ from AppModel import AlzhiNet
 IMAGE_SIZE = (config.IMAGE_SIZE, config.IMAGE_SIZE)
 
 
-def load_dataset_stats():
-    if os.path.exists(config.DATASET_STATS_PATH):
-        with open(config.DATASET_STATS_PATH) as f:
+def load_dataset_stats(stats_path: str = None):
+    stats_path = stats_path or config.DATASET_STATS_PATH
+    if os.path.exists(stats_path):
+        with open(stats_path) as f:
             stats = json.load(f)
         return stats["mean"], stats["std"]
-    print(f"  [WARN] {config.DATASET_STATS_PATH} not found — run "
+    print(f"  [WARN] {stats_path} not found — run "
           f"`python preprocessing.py stats` first. Using a neutral "
           f"placeholder, which may hurt prediction accuracy.")
     return [0.5, 0.5, 0.5], [0.25, 0.25, 0.25]
 
 
-def build_transform():
-    mean, std = load_dataset_stats()
+def build_transform(stats_path: str = None):
+    mean, std = load_dataset_stats(stats_path)
     return transforms.Compose([
         transforms.Resize(IMAGE_SIZE),
         transforms.ToTensor(),
@@ -166,18 +167,23 @@ def cli():
     parser.add_argument("--image", required=True, help="Path to input image")
     parser.add_argument("--gradcam", action="store_true", help="Generate Grad-CAM visualization")
     parser.add_argument("--show", action="store_true", help="Also open a plot window (needs a display)")
+    parser.add_argument("--model-path", type=str, default=None,
+                         help="Override config.BEST_MODEL_PATH (e.g. to inspect one sigma-ensemble member)")
+    parser.add_argument("--stats-path", type=str, default=None,
+                         help="Override config.DATASET_STATS_PATH (match whichever model you're loading)")
     args = parser.parse_args()
 
-    if not os.path.exists(config.BEST_MODEL_PATH):
-        print(f"Trained model not found at {config.BEST_MODEL_PATH}. Run train.py first.")
+    model_path = args.model_path or config.BEST_MODEL_PATH
+    if not os.path.exists(model_path):
+        print(f"Trained model not found at {model_path}. Run train.py first.")
         return
 
     class_names = config.CLASS_ORDER  # standard CDR order — must match train.py's OrderedImageFolder
     model = AlzhiNet(num_classes=len(class_names))
-    model.load_state_dict(torch.load(config.BEST_MODEL_PATH, map_location=torch.device("cpu")))
+    model.load_state_dict(torch.load(model_path, map_location=torch.device("cpu")))
     model.eval()
 
-    transform = build_transform()
+    transform = build_transform(args.stats_path)
     input_tensor, original_image = preprocess_image(args.image, transform)
     class_idx, confidence = predict_image(model, input_tensor)
     print(f"Prediction: {class_names[class_idx]} ({confidence * 100:.2f}% confidence)")

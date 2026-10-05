@@ -37,6 +37,9 @@ train.py           AlzhiNet, class-weighted loss, early stopping,
       |            quadratic-weighted kappa + confusion matrix
       |
 gradcam_cli.py / app.py   Single-image prediction + Grad-CAM (CLI / Streamlit)
+
+ensemble.py           (optional) 4 models, one per Gaussian sigma, combined
+                       by averaging softmax probabilities -- see below
 ```
 
 ## Quick start
@@ -89,6 +92,40 @@ accuracy. The same flow runs automatically in CI on every push (see
 
 See [`FINE_TUNING_GUIDE.md`](FINE_TUNING_GUIDE.md) for the tuning process and
 baseline protocol, and [`MODEL_CARD.md`](MODEL_CARD.md) for results and limits.
+
+## Sigma ensemble (optional, for extra accuracy)
+
+Instead of picking one Gaussian sigma from the sweep, `ensemble.py` trains
+4 models -- one per sigma in `config.ENSEMBLE_SIGMAS` (1.0, 1.25, 1.5, 2.0)
+-- on the **same patient-level split**, then combines their predictions by
+averaging softmax probabilities (soft voting). This is cheap to build
+(reuses the existing preprocessing/training code) and gives the 4 models
+some real diversity, since noise sensitivity differs by sigma, without
+needing extra data or a second architecture.
+
+```bash
+python ensemble.py prepare     # assigns ONE shared patient split, smooths x4, stats x4
+python ensemble.py train       # trains all 4 models on the real baseline schedule
+python ensemble.py evaluate    # combines predictions, reports ensemble vs. each model
+
+python ensemble.py all --epochs 3 --patience 3   # fast smoke run, all 3 steps
+```
+
+All 4 models are guaranteed to share the exact same train/val/test
+patients -- the split is computed once (`data_pipeline.py assign`) and
+reused across all 4 sigma variants, so their test accuracy numbers are
+directly comparable and the combined evaluation is valid. This is checked
+automatically by `tests/test_ensemble.py`.
+
+**Honest expectation-setting:** averaging 4 variants of the *same*
+architecture, differing only in one preprocessing parameter, gives real but
+modest diversity. It's a reasonable cheap first ensemble to try, not a
+guaranteed accuracy win -- `ensemble.py evaluate` reports when the ensemble
+does and doesn't beat the best individual model, and both outcomes are
+worth recording in `MODEL_CARD.md`. A heterogeneous-architecture ensemble
+(AlzhiNet + a pretrained ResNet18/DenseNet121) would likely help more, at
+roughly 4x the compute cost -- a reasonable next step if this one doesn't
+move the needle.
 
 ## Design decisions
 
@@ -148,7 +185,9 @@ tests/               unit tests, app tests, and an end-to-end integration test
 python -m pytest tests/ -v
 ```
 
-16 tests: label mapping, clinical (not alphabetical) class ordering, empty-class
+17 tests: label mapping, clinical (not alphabetical) class ordering, empty-class
 handling, patient-level split leakage, Gaussian smoothing, Grad-CAM, the
-Streamlit app, and one full end-to-end pipeline run on synthetic data
-(~15-20 seconds total). All run in CI on every push.
+Streamlit app, a full end-to-end single-model pipeline run, and a full
+end-to-end sigma-ensemble run (including verifying all 4 variants share
+identical patients) -- all on synthetic data, ~60-90 seconds total. All run
+in CI on every push.
