@@ -48,7 +48,7 @@ ensemble.py           (optional) 4 models, one per Gaussian sigma, combined
 git clone https://github.com/aphan37/CNNModel.git
 cd CNNModel
 pip install -r requirements.txt
-python -m pytest tests/ -v        # 15 tests, no data required
+python -m pytest tests/ -v        # 17 tests, ~1-2 min, no real data required
 ```
 
 To train, place the NACC clinical CSV and labeled `.jpg` folder in the repo
@@ -90,6 +90,13 @@ pipeline works end to end; it proves nothing about real diagnostic
 accuracy. The same flow runs automatically in CI on every push (see
 `tests/test_integration.py`).
 
+> **Changing sigma? Clear the cache first.** `preprocessing.py apply` and
+> `data_pipeline.py split` skip files that already exist, so re-running them
+> with a different `GAUSSIAN_SIGMA` silently reuses the old images. Delete
+> `preprocessedNACCImages/`, `dataset/`, and `results/dataset_stats.json`
+> before re-running. (`ensemble.py` avoids this by keeping each sigma in its
+> own `ensemble/sigma_<value>/` folder.)
+
 See [`FINE_TUNING_GUIDE.md`](FINE_TUNING_GUIDE.md) for the tuning process and
 baseline protocol, and [`MODEL_CARD.md`](MODEL_CARD.md) for results and limits.
 
@@ -111,11 +118,29 @@ python ensemble.py evaluate    # combines predictions, reports ensemble vs. each
 python ensemble.py all --epochs 3 --patience 3   # fast smoke run, all 3 steps
 ```
 
+Everything the ensemble writes goes under `ensemble/` (gitignored: it holds
+smoothed image copies and per-image predictions whose filenames contain
+NACCIDs). The combined result lands in `ensemble/ensemble_results.json`.
+
+On a CPU-only machine, `ensemble.py all` trains 4 models back to back and
+takes noticeably longer than a single run. Use `--epochs 3 --patience 3` for
+a smoke test, or run `prepare`, `train`, and `evaluate` as separate steps.
+
 All 4 models are guaranteed to share the exact same train/val/test
 patients -- the split is computed once (`data_pipeline.py assign`) and
 reused across all 4 sigma variants, so their test accuracy numbers are
 directly comparable and the combined evaluation is valid. This is checked
 automatically by `tests/test_ensemble.py`.
+
+**Current scope.** `ensemble.py` evaluates the combined model on the
+held-out test set. The single-image tools (`gradcam_cli.py`, `app.py`) still
+use one model. To inspect one ensemble member's attention map:
+
+```bash
+python gradcam_cli.py --image path/to/scan.jpg --gradcam \
+  --model-path ensemble/sigma_1.5/model/best_model.pth \
+  --stats-path ensemble/sigma_1.5/results/dataset_stats.json
+```
 
 **Honest expectation-setting:** averaging 4 variants of the *same*
 architecture, differing only in one preprocessing parameter, gives real but
@@ -153,8 +178,9 @@ move the needle.
 
 ## Results
 
-Results are reported in [`MODEL_CARD.md`](MODEL_CARD.md) once the leakage-free
-patient-level run is complete. Earlier image-level-split runs reported ~99%
+Results (single-model baseline and, if run, the sigma ensemble) are reported
+in [`MODEL_CARD.md`](MODEL_CARD.md) once the leakage-free patient-level run is
+complete. Earlier image-level-split runs reported ~99%
 accuracy; those numbers are likely inflated by patient leakage and are
 intentionally not reported here.
 
@@ -163,20 +189,26 @@ intentionally not reported here.
 MRI images and clinical records come from the NACC (National Alzheimer's
 Coordinating Center) data center and are governed by its data use agreement.
 **No patient data is included in this repository**, and `.gitignore` excludes
-CSVs, images, and checkpoints so none is committed by accident.
+CSVs, images, checkpoints, `results/`, and `ensemble/` so none is committed by
+accident. Image filenames embed NACCIDs, so treat prediction/split files as
+sensitive too.
 
 ## Repo layout
 
 ```
-config.py            paths, CDR mapping, hyperparameters (single source of truth)
-AppModel.py          AlzhiNet architecture (shared by train / Grad-CAM / app)
-data_pipeline.py     harmonization + patient-level stratified split
+config.py            paths, CDR mapping, hyperparameters, ensemble sigmas (single source of truth)
+AppModel.py          AlzhiNet architecture (shared by train / Grad-CAM / app / ensemble)
+data_pipeline.py     harmonization, patient-level stratified split, shared split assignment
 preprocessing.py     Gaussian smoothing, sigma sweep, dataset stats
-train.py             training + evaluation
+train.py             training + evaluation (also writes per-image probabilities)
+ensemble.py          4-sigma ensemble: prepare / train / evaluate / all
 gradcam_cli.py       CLI classifier + Grad-CAM
 app.py               Streamlit demo
 scripts/generate_sample_data.py   synthetic data generator for smoke-testing without real data
-tests/               unit tests, app tests, and an end-to-end integration test
+tests/               17 tests (see below)
+FINE_TUNING_GUIDE.md tuning order, baseline protocol, cross-validation, ensemble guidance
+MODEL_CARD.md        results and limitations, filled in after each frozen baseline
+.github/workflows/   CI: runs the test suite on every push
 ```
 
 ### Tests
@@ -185,9 +217,11 @@ tests/               unit tests, app tests, and an end-to-end integration test
 python -m pytest tests/ -v
 ```
 
-17 tests: label mapping, clinical (not alphabetical) class ordering, empty-class
-handling, patient-level split leakage, Gaussian smoothing, Grad-CAM, the
-Streamlit app, a full end-to-end single-model pipeline run, and a full
-end-to-end sigma-ensemble run (including verifying all 4 variants share
-identical patients) -- all on synthetic data, ~60-90 seconds total. All run
-in CI on every push.
+| File | What it covers |
+|---|---|
+| `tests/test_pipeline.py` | CDR label mapping, clinical (not alphabetical) class ordering, empty-class handling, patient-level split leakage, Gaussian smoothing, Grad-CAM |
+| `tests/test_app.py` | Streamlit app loads with and without a trained model |
+| `tests/test_integration.py` | Full single-model pipeline on synthetic data: organize, smooth, split, train, Grad-CAM |
+| `tests/test_ensemble.py` | Full sigma-ensemble run on synthetic data, including that all 4 variants share identical patients |
+
+All run in CI on every push; none need real patient data.

@@ -4,6 +4,9 @@ labeledNACCImages/
 organizedNACCImages/
 preprocessedNACCImages/
 dataset/
+# Sigma ensemble outputs: smoothed image copies, models, and
+# test_predictions.json (filenames contain NACCIDs)
+ensemble/
 
 # Training artifacts
 models/

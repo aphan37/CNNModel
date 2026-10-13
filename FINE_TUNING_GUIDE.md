@@ -18,6 +18,10 @@ python preprocessing.py apply
 # 3. Compute this dataset's own normalization stats (auto-saved and
 #    auto-loaded by train.py / gradcam_cli.py -- no manual copy-paste)
 python preprocessing.py stats
+#    Note: this single-model `stats` command runs over ALL smoothed images,
+#    including the val/test patients. The effect is tiny (normalization
+#    mean/std only), but `ensemble.py` computes stats from each variant's
+#    train split only, which is the stricter choice.
 
 # 4. Split by PATIENT (not by file) into train/val/test, stratified by severity
 python data_pipeline.py split
@@ -26,7 +30,7 @@ python data_pipeline.py split
 python train.py
 
 # 6. Classify a single image with Grad-CAM explainability
-python gradcam_cli.py --image test_images/sample.jpg --gradcam
+python gradcam_cli.py --image path/to/scan.jpg --gradcam
 ```
 
 The order is enforced, not just suggested: `organize` must run before
@@ -34,6 +38,11 @@ The order is enforced, not just suggested: `organize` must run before
 must run after (it splits from the smoothed output). Running a step before
 its dependency is ready fails immediately with a clear error rather than
 silently producing something wrong.
+
+**Re-running with a different sigma?** `preprocessing.py apply` and
+`data_pipeline.py split` skip files that already exist, so they will quietly
+reuse the previous sigma's images. Delete `preprocessedNACCImages/`,
+`dataset/`, and `results/dataset_stats.json` first, then re-run steps 2-4.
 
 **No real data yet?** `python scripts/generate_sample_data.py` generates a
 small synthetic dataset (fake patients, fake MRI-like images) that exercises
@@ -47,9 +56,9 @@ future change against. Freeze:
 
 - `GAUSSIAN_SIGMA` (pick from the sweep, document why in the model card below)
 - `RANDOM_SEED = 42`
-- The patient-level split itself — re-running `data_pipeline.py` with the
-  same seed should reproduce the exact same train/val/test patient sets
-- Architecture (`AlzhiNet` as defined in `train.py`)
+- The patient-level split itself — re-running `data_pipeline.py split` with
+  the same seed should reproduce the exact same train/val/test patient sets
+- Architecture (`AlzhiNet` as defined in `AppModel.py`)
 - `LEARNING_RATE`, `BATCH_SIZE`, `WEIGHT_DECAY` as set in `config.py`
 
 Record the baseline's test-set accuracy, quadratic-weighted kappa, and
@@ -99,8 +108,9 @@ folds.
 
 ## Model card — fill this in for every baseline you freeze
 
-Keep a short model card (a markdown file per run, e.g.
-`results/model_card_v1.md`) recording:
+Keep the model card in `MODEL_CARD.md` (or, to keep one per frozen baseline,
+`model_cards/model_card_v1.md`). Don't put it under `results/` — that folder is
+gitignored, so the card would never be pushed. Record:
 
 - Date, git commit hash
 - `GAUSSIAN_SIGMA` used and why (link to the sweep image)
@@ -111,6 +121,8 @@ Keep a short model card (a markdown file per run, e.g.
   (currently: most-severe-label-wins for stratification — note if you
   change this)
 - Final test accuracy, quadratic-weighted kappa, confusion matrix
+- If you ran the sigma ensemble: each member's kappa next to the ensemble's
+  (from `ensemble/ensemble_results.json`), including when it did not help
 - Known limitations (e.g., "Severe class has only N test patients, treat
   per-class Severe metrics with caution")
 
